@@ -186,12 +186,17 @@ const PROVIDERS = { 'workers-ai': callWorkersAi, openrouter: callOpenRouter };
 
 function systemPrompt(h, from) {
   const tz = h.CFG.tz, now = Date.now();
-  const day = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'long' }).format(new Date(now));
+  const wd = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'long' });
+  const day = wd.format(new Date(now));
+  // Models miscount weekdays ("Saturday" became a Wednesday), so spell out the next two weeks.
+  const dates = [];
+  for (let i = 0; i < 14; i++) dates.push(wd.format(new Date(now + i * 864e5)) + ' ' + msToLocal(tz, now + i * 864e5).slice(0, 10));
   return 'You are the assistant on a family wall dashboard. Be brief: one or two short sentences, no markdown. ' +
     'Use the tools to read or change the calendar, shopping list and notes; never invent events or items. ' +
     'Never say something was added, changed or deleted unless a tool call in this conversation did it; if a tool returns an error, say it failed. ' +
     'Deleting an event only stages it for approval: say it is waiting for approval. ' +
     'Now: ' + day + ' ' + msToLocal(tz, now).replace('T', ' ') + ' (' + tz + '). ' +
+    'Dates: today ' + dates.join(', ') + '. A weekday name means the next one in this list. ' +
     'People (id: name): ' + h.CFG.people.map((p) => p.id + ': ' + p.name).join(', ') + '. The person asking is ' + from + '.';
 }
 
