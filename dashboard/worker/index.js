@@ -1144,6 +1144,8 @@ async function haImage(env, which, url) {
 }
 
 // ------------------------------------------------------------------ photos
+// R2's free plan includes 10 GB; uploads stop at 9 GB so the bucket never reaches it.
+const PHOTO_BYTES_MAX = 9e9;
 async function uploadPhoto(env, req) {
   const form = await req.formData();
   const full = form.get('full'), small = form.get('small');
@@ -1151,13 +1153,15 @@ async function uploadPhoto(env, req) {
   try { meta = JSON.parse(form.get('meta') || '{}'); } catch (e) {}
   if (!full || !small || typeof full === 'string') return bad('full and small images required');
   if (full.size > 12e6 || small.size > 4e6) return bad('image too large', 413);
+  const used = await env.DB.prepare('SELECT COALESCE(SUM(bytes), 0) AS b FROM photos').first('b');
+  if (used + full.size + small.size > PHOTO_BYTES_MAX) return bad('photo storage is full (9 GB): delete some photos first', 507);
   const id = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
   const date = /^\d{4}-\d{2}-\d{2}$/.test(meta.date) ? meta.date : localDay().ymd;
   const from = CFG.people.some((p) => p.id === meta.from) ? meta.from : null;
   const opts = { httpMetadata: { contentType: 'image/jpeg' } };
   await Promise.all([env.PHOTOS.put('full/' + id + '.jpg', full.stream(), opts), env.PHOTOS.put('small/' + id + '.jpg', small.stream(), opts)]);
-  await env.DB.prepare('INSERT INTO photos (id, o, date, place, from_id, fav, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)')
-    .bind(id, meta.o === 'p' ? 'p' : 'l', date, str(meta.place, 80), from, Date.now()).run();
+  await env.DB.prepare('INSERT INTO photos (id, o, date, place, from_id, fav, created_at, bytes) VALUES (?, ?, ?, ?, ?, 0, ?, ?)')
+    .bind(id, meta.o === 'p' ? 'p' : 'l', date, str(meta.place, 80), from, Date.now(), full.size + small.size).run();
   return json({ id });
 }
 
