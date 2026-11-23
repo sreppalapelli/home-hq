@@ -83,5 +83,8 @@
       "usage": ["sensor.electricity_usage_today", "sensor.gas_usage_today"], "rate": 0.245, "standing": 0.55 }
   },
 
-  "frames": { "notify": ["notify.mobile_app_your_phone"], "quietMinutes": 20 }
+  "frames": { "notify": ["notify.mobile_app_your_phone"], "quietMinutes": 20 },
+
+  "_agent": "The assistant. Free providers only, tried in order; OpenRouter models must end in :free (or be openrouter/free).",
+  "agent": { "order": ["workers-ai", "openrouter"], "workersAiModel": "@cf/openai/gpt-oss-20b", "openrouterModels": ["openrouter/free"], "maxToolRounds": 4 }
 }

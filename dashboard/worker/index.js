@@ -8,6 +8,7 @@
 // kept in a cookie (the kiosk WebView keeps cookies across reboots).
 import RAW from '../settings.json';
 import { parseIcs } from './ics.js';
+import { runAgent, listApprovals, decideApproval, freeOpenRouterModel } from './agent.js';
 
 const DAY_MS = 864e5;
 const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -51,8 +52,16 @@ const CFG = (function () {
   const warnings = RAW.warnings && RAW.warnings.region ? RAW.warnings : null;
   const display = RAW.display || {};
   const frames = RAW.frames || {};
+  // The assistant: free providers only, tried in order (worker/agent.js).
+  const ag = RAW.agent || {};
+  const agent = {
+    order: Array.isArray(ag.order) && ag.order.length ? ag.order : ['workers-ai', 'openrouter'],
+    workersAiModel: ag.workersAiModel || '@cf/openai/gpt-oss-20b',
+    openrouterModels: (ag.openrouterModels || ['openrouter/free']).filter(freeOpenRouterModel),
+    maxToolRounds: Math.max(1, Math.min(4, ag.maxToolRounds || 4)),
+  };
   return {
-    tz, people, bins, warnings, display,
+    tz, people, bins, warnings, display, agent,
     // Notify services (e.g. "notify.mobile_app_pixel") told when a frame goes quiet or comes back.
     frameNotify: home && Array.isArray(frames.notify) ? frames.notify.filter((s) => /^notify\.\w+$/.test(s)) : [],
     frameQuietMinutes: Math.max(20, frames.quietMinutes || 20),
@@ -1143,6 +1152,13 @@ async function haImage(env, which, url) {
   return imageResponse(await ha(env, pic, { headers: { 'content-type': '' } }), ART_CACHE);
 }
 
+// ------------------------------------------------------------------ assistant
+// What worker/agent.js may use: the same functions the frame's own buttons call.
+const AGENT_HOOKS = {
+  CFG, getCalendar, addEvent, deleteEvent, putGrocery, putNote,
+  uid: () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+};
+
 // ------------------------------------------------------------------ photos
 // R2's free plan includes 10 GB; uploads stop at 9 GB so the bucket never reaches it.
 const PHOTO_BYTES_MAX = 9e9;
@@ -1210,6 +1226,25 @@ async function api(req, env, url) {
   if ((r = /^\/notes\/([a-z0-9]{6,40})\/restore$/.exec(p)) && m === 'POST') return clearNote(env, r[1], true);
   if (p === '/groceries' && m === 'POST') return putGrocery(env, await body(req));
   if (p === '/groceries/clear' && m === 'POST') return clearGroceries(env, await body(req));
+
+  if (p === '/agent' && m === 'POST') {
+    const b = await body(req), prompt = str(b.prompt, 500);
+    if (!prompt) return bad('prompt required');
+    const from = CFG.people.some((x) => x.id === b.from) ? b.from : CFG.people[0].id;
+    return json(await runAgent(env, AGENT_HOOKS, prompt, from, str(b.provider, 20)));
+  }
+  if (p === '/agent/runs' && m === 'GET') {
+    const n = Math.max(1, Math.min(50, parseInt(url.searchParams.get('limit'), 10) || 20));
+    const rows = await env.DB.prepare('SELECT id, at, from_id, prompt, provider, model, ms, tools, reply, error FROM agent_runs ORDER BY at DESC LIMIT ?').bind(n).all();
+    return json(rows.results.map((r) => Object.assign(r, { tools: JSON.parse(r.tools) })));
+  }
+  if (p === '/approvals' && m === 'GET') return json(await listApprovals(env));
+  if ((r = /^\/approvals\/([a-f0-9]{16})$/.exec(p)) && m === 'POST') {
+    const decision = (await body(req)).decision;
+    if (decision !== 'approve' && decision !== 'cancel') return bad('decision must be approve or cancel');
+    const out = await decideApproval(env, AGENT_HOOKS, r[1], decision);
+    return out.error ? bad(out.error, out.status) : json(out);
+  }
 
   if (p === '/photos' && m === 'POST') return uploadPhoto(env, req);
   if ((r = /^\/photos\/(\w+)$/.exec(p))) {
