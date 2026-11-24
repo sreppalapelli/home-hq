@@ -29,6 +29,10 @@
 .ag-input-wrap { flex: 1; min-width: 0; display: flex; align-items: center; height: 80px; padding: 0 20px; border-radius: 14px; background: #fff; }
 .ag-input { flex: 1; min-width: 0; height: 100%; border: 0; outline: none; background: transparent; font-size: 24px; font-weight: 600; }
 .ag-send { height: 80px; padding: 0 24px; font-size: 22px; }
+.ag-mic { width: 80px; height: 80px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--paper-2); color: var(--ink); }
+.ag-mic:active { transform: scale(.94); }
+.ag-mic.is-rec { background: var(--alert); color: #fff; animation: ag-rec 1.2s ease-in-out infinite; }
+@keyframes ag-rec { 50% { box-shadow: 0 0 0 10px rgb(var(--alert-rgb) / .25); } }
 .ag-send:disabled { opacity: .4; }
 .ag-quick { display: flex; flex-wrap: wrap; gap: 10px; }
 .ag-quick .chip { min-height: 56px; }

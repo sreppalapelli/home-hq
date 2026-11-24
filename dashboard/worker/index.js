@@ -8,7 +8,7 @@
 // kept in a cookie (the kiosk WebView keeps cookies across reboots).
 import RAW from '../settings.json';
 import { parseIcs } from './ics.js';
-import { runAgent, listApprovals, decideApproval, freeOpenRouterModel } from './agent.js';
+import { runAgent, listApprovals, decideApproval, freeOpenRouterModel, transcribe } from './agent.js';
 
 const DAY_MS = 864e5;
 const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -1232,6 +1232,16 @@ async function api(req, env, url) {
     if (!prompt) return bad('prompt required');
     const from = CFG.people.some((x) => x.id === b.from) ? b.from : CFG.people[0].id;
     return json(await runAgent(env, AGENT_HOOKS, prompt, from, str(b.provider, 20)));
+  }
+  // The mic button: a recording (at most 2 MB, about 10 s) becomes text, then the same as /agent.
+  if (p === '/voice' && m === 'POST') {
+    const form = await req.formData(), audio = form.get('audio');
+    if (!audio || typeof audio === 'string') return bad('audio required');
+    if (audio.size > 2e6) return bad('recording too long', 413);
+    const text = (await transcribe(env, audio)).slice(0, 500);
+    if (!text) return json({ transcript: '', ok: false, reply: 'I didn’t catch that. Try again a bit closer to the mic.', actions: [], approvals: [] });
+    const from = CFG.people.some((x) => x.id === form.get('from')) ? form.get('from') : CFG.people[0].id;
+    return json(Object.assign({ transcript: text }, await runAgent(env, AGENT_HOOKS, text, from)));
   }
   if (p === '/agent/runs' && m === 'GET') {
     const n = Math.max(1, Math.min(50, parseInt(url.searchParams.get('limit'), 10) || 20));

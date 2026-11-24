@@ -5,7 +5,8 @@
 (function () {
   'use strict';
   var $ = App.$;
-  var V = { el: null, busy: false, last: null, runs: [], approvals: [] };
+  var V = { el: null, busy: false, last: null, runs: [], approvals: [], rec: null };
+  var REC_MAX_MS = 10e3;
   var QUICK = [
     { label: 'What’s on today?', prompt: 'What is on the calendar today?' },
     { label: 'This week', prompt: 'What is on the calendar this week?' },
@@ -27,6 +28,7 @@
   // ------------------------------------------------------------ painting
   function paintAnswer() {
     var el = V.el.querySelector('.ag-answer'), r = V.last;
+    if (V.rec) { el.innerHTML = '<div class="card ag-reply is-busy"><div class="label">Listening…</div><p class="serif ag-text">Speak now, then tap the mic to stop.</p></div>'; return; }
     if (V.busy) { el.innerHTML = '<div class="card ag-reply is-busy"><div class="label">Thinking…</div><p class="serif ag-text">' + App.esc(V.busy) + '</p></div>'; return; }
     if (!r) { el.innerHTML = '<div class="card ag-reply is-empty"><div class="label">Assistant</div><p class="serif ag-text">Ask about the calendar, the shopping list or notes.</p></div>'; return; }
     el.innerHTML = '<div class="card ag-reply' + (r.ok ? '' : ' is-error') + '">' +
@@ -59,7 +61,8 @@
       '<header class="ag-head"><div><div class="label">Ask in plain words</div><h1 class="serif">Assistant</h1></div></header>' +
       '<div class="ag-main"><div class="ag-answer"></div><div class="ag-runs"></div></div>' +
       '<aside class="ag-side">' +
-      '  <form class="ag-ask"><label class="ag-input-wrap"><input class="ag-input" placeholder="e.g. Add milk and eggs" autocomplete="off" enterkeyhint="send" maxlength="500"></label>' +
+      '  <form class="ag-ask"><label class="ag-input-wrap"><input class="ag-input" placeholder="e.g. Add milk" autocomplete="off" enterkeyhint="send" maxlength="500"></label>' +
+      (canRecord() ? '  <button class="ag-mic" type="button" data-mic aria-label="Speak">' + App.icon('mic', 30) + '</button>' : '') +
       '  <button class="btn btn--solid ag-send" type="submit">Ask</button></form>' +
       '  <div class="ag-quick">' + QUICK.map(function (q, i) { return '<button class="chip" data-quick="' + i + '">' + App.esc(q.label) + '</button>'; }).join('') + '</div>' +
       '  <div class="ag-approvals"></div>' +
@@ -75,23 +78,62 @@
     }).catch(function () { /* offline: keep what is shown */ });
   }
 
-  function ask(prompt) {
-    prompt = prompt.trim();
-    if (!prompt || V.busy) return;
-    V.busy = prompt; paintAnswer();
-    var send = V.el.querySelector('.ag-send'); send.disabled = true;
-    App.api('POST', '/agent', { prompt: prompt }).then(function (r) {
-      V.last = Object.assign({ prompt: prompt }, r);
+  // A typed prompt, or a recording (FormData) that the Worker turns into text first.
+  function send(path, data, label) {
+    V.busy = label; paintAnswer();
+    var btn = V.el.querySelector('.ag-send'); btn.disabled = true;
+    App.api('POST', path, data).then(function (r) {
+      V.last = Object.assign({ prompt: r.transcript ? '“' + r.transcript + '”' : label }, r);
       if (r.actions && r.actions.length) { App.refresh('state'); App.refresh('calendar'); }
     }, function (err) {
-      V.last = { prompt: prompt, ok: false, reply: 'Couldn’t reach the assistant · ' + err.message };
+      V.last = { prompt: label, ok: false, reply: 'Couldn’t reach the assistant · ' + err.message };
     }).then(function () {
-      V.busy = false; send.disabled = false;
+      V.busy = false; btn.disabled = false;
       var input = V.el.querySelector('.ag-input');
-      if (V.last.ok) input.value = '';
+      if (V.last.ok && path === '/agent') input.value = '';
       paintAnswer(); loadSide();
     });
   }
+  function ask(prompt) {
+    prompt = prompt.trim();
+    if (prompt && !V.busy && !V.rec) send('/agent', { prompt: prompt }, prompt);
+  }
+
+  // ------------------------------------------------------------ voice
+  // Tap to start, tap again to stop (or it stops after 10 s). The mic is released as soon as the
+  // recording ends, and nothing runs while idle.
+  function canRecord() {
+    return !!(window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+  }
+  function micButton() { return V.el && V.el.querySelector('.ag-mic'); }
+  function startRec() {
+    if (V.busy || V.rec) return;
+    navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } }).then(function (stream) {
+      var type = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].filter(function (t) { return MediaRecorder.isTypeSupported(t); })[0];
+      var rec = new MediaRecorder(stream, type ? { mimeType: type, audioBitsPerSecond: 16000 } : { audioBitsPerSecond: 16000 });
+      var chunks = [];
+      rec.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+      rec.onstop = function () {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        clearTimeout(V.rec.timer);
+        V.rec = null;
+        var b = micButton(); if (b) b.classList.remove('is-rec');
+        var blob = new Blob(chunks, { type: rec.mimeType || type || 'audio/webm' });
+        chunks = null;
+        if (blob.size < 1000) { paintAnswer(); return; } // a tap without speech
+        var form = new FormData();
+        form.append('audio', blob, 'voice.' + (/mp4/.test(blob.type) ? 'm4a' : 'webm'));
+        send('/voice', form, 'Voice');
+      };
+      V.rec = { rec: rec, timer: setTimeout(function () { if (rec.state === 'recording') rec.stop(); }, REC_MAX_MS) };
+      rec.start();
+      var b = micButton(); if (b) b.classList.add('is-rec');
+      paintAnswer();
+    }, function (err) {
+      App.toast(err && err.name === 'NotAllowedError' ? 'Microphone access is blocked' : 'No microphone found', { tone: 'error', icon: 'mic' });
+    });
+  }
+  function stopRec() { if (V.rec && V.rec.rec.state === 'recording') V.rec.rec.stop(); }
 
   function decide(id, decision, btn) {
     btn.disabled = true;
@@ -105,7 +147,8 @@
 
   function onClick(e) {
     var q = e.target.closest('[data-quick]'), d = e.target.closest('[data-decide]');
-    if (q) {
+    if (e.target.closest('[data-mic]')) { if (V.rec) stopRec(); else startRec(); }
+    else if (q) {
       var item = QUICK[+q.dataset.quick], input = V.el.querySelector('.ag-input');
       if (item.fill) { input.value = item.fill; input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
       else ask(item.prompt);
@@ -123,6 +166,7 @@
       if (!V.el) { V.el = el; el.addEventListener('click', onClick); el.addEventListener('submit', onSubmit); }
       render();
       loadSide();
-    }
+    },
+    hide: stopRec
   });
 })();

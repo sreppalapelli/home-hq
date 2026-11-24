@@ -201,6 +201,19 @@ function systemPrompt(h, from) {
     'People (id: name): ' + h.CFG.people.map((p) => p.id + ': ' + p.name).join(', ') + '. The person asking is ' + from + '.';
 }
 
+// ------------------------------------------------------------------ voice
+// A short recording from the mic button (webm/opus in Chrome, mp4 in Safari) becomes text with
+// Whisper on Workers AI, about 2 neurons for a 3 s request.
+const STT_MODEL = '@cf/openai/whisper-large-v3-turbo';
+export async function transcribe(env, audio) {
+  if (!env.AI) throw new Error('no AI binding');
+  const bytes = new Uint8Array(await audio.arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  const r = await env.AI.run(STT_MODEL, { audio: btoa(bin), language: 'en', vad_filter: true });
+  return String((r && r.text) || '').trim();
+}
+
 // ------------------------------------------------------------------ the loop
 export async function runAgent(env, h, prompt, from, only) {
   const A = h.CFG.agent, t0 = Date.now();
