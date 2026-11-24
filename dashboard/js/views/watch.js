@@ -123,7 +123,9 @@
 
   // ------------------------------------------------------------ data + events
   function fetchWeek() {
-    return App.api('GET', '/watch').then(function (d) { V.data = d; V.loaded = Date.now(); if (V.el && App.current === 'watch') paint(); })
+    // Paint even while hidden: the tab is pre-built in the background, and opening it later only
+    // calls resume, not show.
+    return App.api('GET', '/watch').then(function (d) { V.data = d; V.loaded = Date.now(); if (V.el) paint(); })
       .catch(function () { /* offline: keep what is shown */ });
   }
   function onClick(e) {
@@ -135,11 +137,13 @@
     else if (day) { V.day = day.dataset.day; paint(); var b = V.el.querySelector('.wt-body'); if (b) b.scrollTop = 0; }
   }
 
+  function stale() { return !V.data || Date.now() - V.loaded > REFRESH_MS || V.data.building; }
   App.register('watch', {
     show: function (el) {
       if (!V.el) { V.el = el; el.addEventListener('click', onClick); }
       paint();
-      if (!V.data || Date.now() - V.loaded > REFRESH_MS || V.data.building) fetchWeek();
-    }
+      if (stale()) fetchWeek();
+    },
+    resume: function () { if (stale()) fetchWeek(); }
   });
 })();
