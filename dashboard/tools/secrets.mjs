@@ -2,7 +2,8 @@
 // GOOGLE_MAPS_KEY (optional: live drive times for events with a location) and
 // GOOGLE_SERVICE_ACCOUNT (optional: events added on the frame are written to Google Calendar) and
 // ALERT_TOKEN (optional: lets Home Assistant push urgent alerts; see `npm run ha-alerts`) and
-// OPENROUTER_API_KEY (optional: the assistant's fallback, free models only).
+// OPENROUTER_API_KEY (optional: the assistant's fallback, free models only) and
+// TRAKT_CLIENT_ID + TMDB_API_KEY (+ OMDB_API_KEY for IMDb ratings): the Watch tab.
 // Cloudflare never shows a secret again, so secrets.json is your only readable copy: keep it out
 // of git (refused below) and out of synced folders, and back it up somewhere safe.
 //
@@ -50,6 +51,12 @@ if (alertToken && !/^[A-Za-z0-9]{24,}$/.test(alertToken)) fail('ALERT_TOKEN shou
 const openrouter = typeof S.OPENROUTER_API_KEY === 'string' ? S.OPENROUTER_API_KEY.trim() : '';
 if (openrouter && !/^sk-or-[\w-]{20,}$/.test(openrouter)) fail('OPENROUTER_API_KEY doesn’t look like an OpenRouter key (starts with sk-or-).');
 
+const s_ = (k) => (typeof S[k] === 'string' ? S[k].trim() : '');
+const traktId = s_('TRAKT_CLIENT_ID'), tmdbKey = s_('TMDB_API_KEY'), omdbKey = s_('OMDB_API_KEY');
+if (traktId && !/^[0-9a-f]{64}$/i.test(traktId)) fail('TRAKT_CLIENT_ID should be the 64-character Client ID of your Trakt app.');
+if (tmdbKey && !/^([0-9a-f]{32}|ey[\w-]+\.[\w-]+\.[\w-]+)$/i.test(tmdbKey)) fail('TMDB_API_KEY should be the 32-character API key (or the long Read Access Token) from TMDB settings.');
+if (omdbKey && !/^[0-9a-z]{6,12}$/i.test(omdbKey)) fail('OMDB_API_KEY should be the short key OMDb emailed you.');
+
 const sa = S.GOOGLE_SERVICE_ACCOUNT;
 if (sa && typeof sa === 'object' && Object.keys(sa).some((k) => k[0] !== '_')) { // "_note" alone = blank
   if (sa.type !== 'service_account' || !sa.client_email || !/BEGIN PRIVATE KEY/.test(sa.private_key || '')) {
@@ -80,9 +87,12 @@ if (cals && cals.length) out.CALENDARS = JSON.stringify(cals);
 if (maps) out.GOOGLE_MAPS_KEY = maps;
 if (alertToken) out.ALERT_TOKEN = alertToken;
 if (openrouter) out.OPENROUTER_API_KEY = openrouter;
+if (traktId) out.TRAKT_CLIENT_ID = traktId;
+if (tmdbKey) out.TMDB_API_KEY = tmdbKey;
+if (omdbKey) out.OMDB_API_KEY = omdbKey;
 if (sa && typeof sa === 'object' && sa.private_key) out.GOOGLE_SERVICE_ACCOUNT = JSON.stringify(sa);
 const names = Object.keys(out);
-const skipped = ['DASHBOARD_KEY', 'HA_TOKEN', 'CALENDARS', 'GOOGLE_MAPS_KEY', 'GOOGLE_SERVICE_ACCOUNT', 'ALERT_TOKEN', 'OPENROUTER_API_KEY'].filter((n) => !out[n]);
+const skipped = ['DASHBOARD_KEY', 'HA_TOKEN', 'CALENDARS', 'GOOGLE_MAPS_KEY', 'GOOGLE_SERVICE_ACCOUNT', 'ALERT_TOKEN', 'OPENROUTER_API_KEY', 'TRAKT_CLIENT_ID', 'TMDB_API_KEY', 'OMDB_API_KEY'].filter((n) => !out[n]);
 console.log('secrets.json OK: ' + (names.join(', ') || 'nothing filled in') + (skipped.length ? ' (blank, skipped: ' + skipped.join(', ') + ')' : '') +
   (cals && cals.length ? '; ' + cals.length + ' calendar(s), for ' + cals.map((c) => [].concat(c.people).join('+')).join(', ') : '') +
   (out.GOOGLE_SERVICE_ACCOUNT ? '; frame events written to Google as ' + sa.client_email + ' (share each calendar with it)' : ''));

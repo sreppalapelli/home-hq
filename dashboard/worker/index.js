@@ -9,6 +9,7 @@
 import RAW from '../settings.json';
 import { parseIcs } from './ics.js';
 import { runAgent, listApprovals, decideApproval, freeOpenRouterModel, transcribe } from './agent.js';
+import { stepWatch, watchWeek, watchTitle, watchImage, watchSummary, SERVICES as WATCH_SERVICES } from './watch.js';
 
 const DAY_MS = 864e5;
 const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -62,8 +63,15 @@ const CFG = (function () {
     openrouterModels: (ag.openrouterModels || ['openrouter/free']).filter(freeOpenRouterModel),
     maxToolRounds: Math.max(1, Math.min(4, ag.maxToolRounds || 4)),
   };
+  // Watch: streaming premieres for these services (worker/watch.js). Hotstar uses India's catalog.
+  const wt = RAW.watch || {};
+  const watch = {
+    region: /^[A-Z]{2}$/.test(wt.region || '') ? wt.region : 'US',
+    hotstarRegion: /^[A-Z]{2}$/.test(wt.hotstarRegion || '') ? wt.hotstarRegion : 'IN',
+    services: Array.isArray(wt.services) ? wt.services.filter((s) => WATCH_SERVICES.some((x) => x.id === s)) : WATCH_SERVICES.map((x) => x.id),
+  };
   return {
-    tz, people, bins, warnings, display, agent,
+    tz, people, bins, warnings, display, agent, watch,
     family: typeof RAW.family === 'string' ? RAW.family.trim().slice(0, 60) : '',
     // Notify services (e.g. "notify.mobile_app_pixel") told when a frame goes quiet or comes back.
     frameNotify: home && Array.isArray(frames.notify) ? frames.notify.filter((s) => /^notify\.\w+$/.test(s)) : [],
@@ -1158,7 +1166,7 @@ async function haImage(env, which, url) {
 // ------------------------------------------------------------------ assistant
 // What worker/agent.js may use: the same functions the frame's own buttons call.
 const AGENT_HOOKS = {
-  CFG, getCalendar, addEvent, deleteEvent, putGrocery, putNote,
+  CFG, getCalendar, addEvent, deleteEvent, putGrocery, putNote, putCache, watchSummary,
   uid: () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
 };
 
@@ -1246,6 +1254,12 @@ async function api(req, env, url) {
     const from = CFG.people.some((x) => x.id === form.get('from')) ? form.get('from') : CFG.people[0].id;
     return json(Object.assign({ transcript: text }, await runAgent(env, AGENT_HOOKS, text, from)));
   }
+  if (p === '/watch' && m === 'GET') return json(await watchWeek(env, AGENT_HOOKS));
+  if ((r = /^\/watch\/(tv|movie)\/(\d{1,9})$/.exec(p)) && m === 'GET') {
+    const t = await watchTitle(env, AGENT_HOOKS, r[1], +r[2]);
+    return t ? json(t) : bad('Watch is not set up', 404);
+  }
+  if ((r = /^\/watch\/img\/(w185|w500)(\/[^/]+)$/.exec(p)) && m === 'GET') return watchImage(r[1], r[2]);
   if (p === '/agent/runs' && m === 'GET') {
     const n = Math.max(1, Math.min(50, parseInt(url.searchParams.get('limit'), 10) || 20));
     const rows = await env.DB.prepare('SELECT id, at, from_id, prompt, provider, model, ms, tools, reply, error FROM agent_runs ORDER BY at DESC LIMIT ?').bind(n).all();
@@ -1290,6 +1304,7 @@ async function api(req, env, url) {
 export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil(checkFrames(env).catch((err) => console.error('checkFrames', err)));
+    ctx.waitUntil(stepWatch(env, AGENT_HOOKS).then((log) => console.log(log), (err) => console.error('watch', err)));
   },
   async fetch(req, env) {
     const url = new URL(req.url);

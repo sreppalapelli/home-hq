@@ -52,6 +52,10 @@ const TOOLS = [
     action: { type: 'string', enum: ['add', 'check', 'remove'] },
     items: { type: 'array', items: { type: 'string' }, description: 'item names, e.g. ["milk", "2 bananas"]' },
   }, ['action', 'items']),
+  fn('watch_list', 'New movies, new series and new seasons premiering on streaming services in the next 7 days.', {
+    day: { type: 'string', description: 'YYYY-MM-DD; omit for the whole week' },
+    service: { type: 'string', enum: ['netflix', 'prime', 'disney', 'hulu', 'max', 'apple', 'paramount', 'hotstar'] },
+  }),
   fn('notes_post', 'Post a sticky note on the frames.', {
     text: { type: 'string', description: 'max 140 characters' },
     to: { type: 'string', description: 'person id, or "all"' },
@@ -123,6 +127,7 @@ async function runTool(env, h, name, args, ctx) {
     if (done.length) ctx.actions.push({ add: 'Added', check: 'Ticked off', remove: 'Removed' }[args.action] + ': ' + done.join(', '));
     return { done, notFound: items.filter((i) => done.indexOf(i) < 0 && !done.some((d) => i.endsWith(d))) };
   }
+  if (name === 'watch_list') return h.watchSummary(env, h, /^\d{4}-\d{2}-\d{2}$/.test(args.day || '') ? args.day : null, args.service || null);
   if (name === 'notes_post') {
     const res = await h.putNote(env, { id: h.uid(), text: args.text, from: ctx.from, to: personId(h, args.to) || 'all' });
     const out = await res.json();
@@ -193,7 +198,7 @@ function systemPrompt(h, from) {
   const dates = [];
   for (let i = 0; i < 14; i++) dates.push(wd.format(new Date(now + i * 864e5)) + ' ' + msToLocal(tz, now + i * 864e5).slice(0, 10));
   return 'You are the assistant on ' + (h.CFG.family ? 'the ' + h.CFG.family + ' family’s' : 'a family') + ' wall dashboard. Be brief: one or two short sentences, no markdown. ' +
-    'Use the tools to read or change the calendar, shopping list and notes; never invent events or items. ' +
+    'Use the tools to read or change the calendar, shopping list and notes, and to see what premieres on streaming this week; never invent events, items or titles. ' +
     'Never say something was added, changed or deleted unless a tool call in this conversation did it; if a tool returns an error, say it failed. ' +
     'Deleting an event only stages it for approval: say it is waiting for approval. ' +
     'Other people’s names (friends, doctors, teachers) belong in the event title, never in people; add the event without asking who they are. ' +
