@@ -53,7 +53,7 @@ if (openrouter && !/^sk-or-[\w-]{20,}$/.test(openrouter)) fail('OPENROUTER_API_K
 
 const s_ = (k) => (typeof S[k] === 'string' ? S[k].trim() : '');
 const traktId = s_('TRAKT_CLIENT_ID'), tmdbKey = s_('TMDB_API_KEY'), omdbKey = s_('OMDB_API_KEY');
-if (traktId && !/^[0-9a-f]{64}$/i.test(traktId)) fail('TRAKT_CLIENT_ID should be the 64-character Client ID of your Trakt app.');
+if (traktId && !/^[\w-]{32,80}$/.test(traktId)) fail('TRAKT_CLIENT_ID should be the Client ID of your Trakt app (letters, digits, _ and -).');
 if (tmdbKey && !/^([0-9a-f]{32}|ey[\w-]+\.[\w-]+\.[\w-]+)$/i.test(tmdbKey)) fail('TMDB_API_KEY should be the 32-character API key (or the long Read Access Token) from TMDB settings.');
 if (omdbKey && !/^[0-9a-z]{6,12}$/i.test(omdbKey)) fail('OMDB_API_KEY should be the short key OMDb emailed you.');
 

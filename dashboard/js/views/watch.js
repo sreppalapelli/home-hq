@@ -73,7 +73,7 @@
   // ------------------------------------------------------------ details
   function openTitle(type, id) {
     var x = V.data.items.filter(function (i) { return i.type === type && String(i.tmdb) === id; })[0];
-    App.sheet('<div class="sheet-pad wt-sheet"><p class="wt-empty serif">Loading…</p></div>', { cls: 'wt-sheet-wrap' });
+    App.sheet('<div class="sheet-pad wt-sheet"><p class="wt-empty serif">Loading…</p></div>', { cls: 'sheet--wide' });
     App.api('GET', '/watch/' + type + '/' + id).then(function (t) {
       var layer = document.querySelector('#sheetLayer .wt-sheet');
       if (!layer) return;

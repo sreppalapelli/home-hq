@@ -27,6 +27,8 @@ export const SERVICES = [
   { id: 'paramount', name: 'Paramount+', color: '#0064FF', re: /^paramount(\+| plus)/i },
   { id: 'hotstar', name: 'Hotstar (India)', color: '#0F1E5A', re: /hotstar/i },
 ];
+// TMDB TV network ids per service: discover/tv?with_networks lists shows airing that week.
+const TMDB_NETWORKS = { netflix: '213', prime: '1024', disney: '2739', hulu: '453', max: '49|3186', apple: '2552', paramount: '4330', hotstar: '3919|5917' };
 const FAMILY_CERTS = ['G', 'PG', 'PG-13', 'TV-Y', 'TV-Y7', 'TV-Y7-FV', 'TV-G', 'TV-PG', 'TV-14', 'U', 'UA', 'U/A 7+', 'U/A 13+'];
 
 function serviceOf(name, allowed) {
@@ -72,17 +74,38 @@ async function readWeek(env) {
 }
 function writeWeek(env, h, week) { return h.putCache(env, WEEK_KEY, week, 3 * 864e5); }
 
-// One Trakt calendar per run: shows/new, shows/premieres, movies/streaming.
-const STAGES = ['new', 'premieres', 'movies'];
+// One source per run: Trakt new shows, Trakt season premieres, TMDB shows airing on each service's
+// network (Trakt's calendars miss many streaming premieres), Trakt streaming movies, and TMDB's US
+// digital releases (streaming originals such as Netflix films and specials, named in the note).
+const STAGES = ['new', 'premieres', 'tmdbtv', 'movies', 'tmdbmovies'];
 async function fetchStage(env, h, stage, week, b) {
   const W = h.CFG.watch, start = week.from;
   if (stage === 'movies') {
-    const list = await trakt(env, b, '/calendars/all/movies/streaming/' + start + '/' + DAYS + '?extended=full');
+    const list = await trakt(env, b, '/calendars/all/streaming/' + start + '/' + DAYS + '?extended=full');
     list.forEach((m) => {
       if (!m.movie || !m.movie.ids || !m.movie.ids.tmdb) return;
       add(week, { type: 'movie', tmdb: m.movie.ids.tmdb, imdb: m.movie.ids.imdb || null, title: m.movie.title, year: m.movie.year,
         date: m.released, time: null, service: null, label: 'Movie', cert: m.movie.certification || null, overview: m.movie.overview || '' });
     });
+    return;
+  }
+  if (stage === 'tmdbmovies') {
+    for (let page = 1; page <= 3 && b.left > 1; page++) {
+      const r = await tmdb(env, b, '/discover/movie?region=' + W.region + '&with_release_type=4&release_date.gte=' + week.from + '&release_date.lte=' + week.to + '&sort_by=popularity.desc&page=' + page);
+      (r.results || []).forEach((m) => add(week, { type: 'movie', tmdb: m.id, imdb: null, title: m.title, year: String(m.release_date || '').slice(0, 4),
+        date: null, needsDate: true, time: null, service: null, label: 'Movie', cert: null, overview: m.overview || '' }));
+      if (page >= (r.total_pages || 1)) break;
+    }
+    return;
+  }
+  if (stage === 'tmdbtv') {
+    // Candidates only: which episode airs when comes with the details (stepWatch keeps premieres).
+    for (const sv of W.services) {
+      if (!TMDB_NETWORKS[sv] || b.left < 2) continue;
+      const r = await tmdb(env, b, '/discover/tv?with_networks=' + encodeURIComponent(TMDB_NETWORKS[sv]) + '&air_date.gte=' + week.from + '&air_date.lte=' + week.to + '&sort_by=popularity.desc');
+      (r.results || []).forEach((s) => add(week, { type: 'tv', tmdb: s.id, imdb: null, title: s.name, year: String(s.first_air_date || '').slice(0, 4),
+        date: null, needsDate: true, time: null, service: sv, label: null, cert: null, overview: s.overview || '' }));
+    }
     return;
   }
   const list = await trakt(env, b, '/calendars/all/shows/' + (stage === 'new' ? 'new' : 'premieres') + '/' + start + '/' + DAYS + '?extended=full');
@@ -99,7 +122,7 @@ async function fetchStage(env, h, stage, week, b) {
   });
 }
 function add(week, it) {
-  if (!it.date || it.date < week.from || it.date > week.to) return;
+  if (!it.needsDate && (!it.date || it.date < week.from || it.date > week.to)) return;
   it.key = it.type + ':' + it.tmdb;
   if (week.items.some((x) => x.key === it.key)) return;
   it.state = 'pending';
@@ -136,7 +159,20 @@ async function fetchDetails(env, h, type, id, b) {
     by: type === 'movie' ? crew.filter((c) => c.job === 'Director').map((c) => c.name).slice(0, 2)
       : (t.created_by || []).map((c) => c.name).slice(0, 2),
     service: usService || inService, imdbRating: null, rt: null,
+    eps: [t.next_episode_to_air, t.last_episode_to_air].filter(Boolean).map((e) => ({ season: e.season_number, number: e.episode_number, date: e.air_date })),
   };
+  // Streaming originals often have no provider listed before release day, but their US digital
+  // release (type 4) carries the service in its note ("Netflix").
+  if (type === 'movie' && !d.service) {
+    const us = ((t.release_dates || {}).results || []).find((x) => x.iso_3166_1 === W.region);
+    const hit = us && us.release_dates.find((r) => r.type === 4 && serviceOf(r.note, W.services));
+    if (hit) { d.service = serviceOf(hit.note, W.services); d.digital = String(hit.release_date).slice(0, 10); }
+  }
+  if (type === 'movie' && !d.digital) {
+    const us = ((t.release_dates || {}).results || []).find((x) => x.iso_3166_1 === W.region);
+    const dig = us && us.release_dates.find((r) => r.type === 4);
+    if (dig) d.digital = String(dig.release_date).slice(0, 10);
+  }
   if (imdb && env.OMDB_API_KEY && b.left > 0) {
     try {
       const o = await getJson(b, OMDB + '?apikey=' + env.OMDB_API_KEY + '&i=' + imdb);
@@ -152,7 +188,24 @@ async function cachedDetails(env, type, id) {
   const row = await env.DB.prepare('SELECT value, expires FROM cache WHERE key = ?').bind('watch:t:' + type + ':' + id).first();
   return row && row.expires > Date.now() ? JSON.parse(row.value) : null;
 }
-function merge(it, d) {
+function merge(it, d, week) {
+  const inWeek = (x) => !!x && x >= week.from && x <= week.to;
+  // Premieres only: a movie from an earlier year newly added to a service is a catalog addition.
+  if (it.type === 'movie' && d.year && +d.year < +week.from.slice(0, 4) - 1) { it.state = 'dropped'; return; }
+  if (it.type === 'movie') {
+    // The service's own (US digital) date beats Trakt's UTC one; TMDB candidates need it.
+    if (inWeek(d.digital)) { it.date = d.digital; it.needsDate = false; }
+    if (it.needsDate) { it.state = 'dropped'; return; }
+  } else if (!it.needsDate) {
+    const e = (d.eps || []).find((x) => x.number === 1 && x.season === it.season && inWeek(x.date));
+    if (e) { it.date = e.date; it.time = null; }
+  }
+  if (it.needsDate) {
+    // Keep only a premiere: episode 1 of a season airing this week.
+    const e = (d.eps || []).find((x) => x.number === 1 && x.season >= 1 && x.date >= week.from && x.date <= week.to);
+    if (!e) { it.state = 'dropped'; return; }
+    it.date = e.date; it.season = e.season; it.label = e.season === 1 ? 'New series' : 'Season ' + e.season; it.needsDate = false;
+  }
   it.poster = d.poster; it.imdbRating = d.imdbRating; it.tmdbScore = d.tmdbScore;
   if (!it.imdb) it.imdb = d.imdb;
   if (it.type === 'movie') it.service = d.service;
@@ -180,7 +233,7 @@ export async function stepWatch(env, h) {
   for (const it of week.items) {
     if (it.state !== 'pending' || b.left < 3) continue;
     try {
-      merge(it, (await cachedDetails(env, it.type, it.tmdb)) || (await fetchDetails(env, h, it.type, it.tmdb, b)));
+      merge(it, (await cachedDetails(env, it.type, it.tmdb)) || (await fetchDetails(env, h, it.type, it.tmdb, b)), week);
       done++;
     } catch (e) { it.state = 'failed'; week.errors.push(it.key + ': ' + e.message); }
   }

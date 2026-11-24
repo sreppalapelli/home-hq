@@ -81,6 +81,9 @@
   // A typed prompt, or a recording (FormData) that the Worker turns into text first.
   function send(path, data, label) {
     V.busy = label; paintAnswer();
+    // Waiting for an answer counts as use: don't let the idle timer leave this tab meanwhile.
+    App.resetIdle();
+    var awake = setInterval(App.resetIdle, 5000);
     var btn = V.el.querySelector('.ag-send'); btn.disabled = true;
     App.api('POST', path, data).then(function (r) {
       V.last = Object.assign({ prompt: r.transcript ? '“' + r.transcript + '”' : label }, r);
@@ -88,6 +91,7 @@
     }, function (err) {
       V.last = { prompt: label, ok: false, reply: 'Couldn’t reach the assistant · ' + err.message };
     }).then(function () {
+      clearInterval(awake); App.resetIdle();
       V.busy = false; btn.disabled = false;
       var input = V.el.querySelector('.ag-input');
       if (V.last.ok && path === '/agent') input.value = '';
@@ -127,6 +131,7 @@
       };
       V.rec = { rec: rec, timer: setTimeout(function () { if (rec.state === 'recording') rec.stop(); }, REC_MAX_MS) };
       rec.start();
+      App.resetIdle();
       var b = micButton(); if (b) b.classList.add('is-rec');
       paintAnswer();
     }, function (err) {

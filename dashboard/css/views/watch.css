@@ -35,6 +35,6 @@
 .wt-scores b { font-size: 26px; color: var(--ink); margin-right: 4px; }
 .wt-facts { font-size: 17px; color: var(--ink-2); margin: 8px 0; }
 .wt-plot { font-size: 19px; line-height: 1.35; margin: 12px 0 16px; }
-.wt-cast { list-style: none; margin: 8px 0 12px; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px; }
+.wt-cast { list-style: none; margin: 8px 0 12px; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 18px; }
 .wt-cast li { display: flex; flex-direction: column; font-size: 17px; }
 .wt-cast small { color: var(--mute); font-size: 14px; }
