@@ -1,0 +1,50 @@
+# Deploys the dashboard to Cloudflare on every push to main (or by hand from the Actions tab).
+# The private files are not in the repository; they come from encrypted repository secrets:
+#   SETTINGS_JSON          the whole dashboard/settings.json
+#   WRANGLER_LOCAL_JSONC   the whole dashboard/wrangler.local.jsonc (your D1 id, workers.dev)
+#   CLOUDFLARE_API_TOKEN   a token from the "Edit Cloudflare Workers" template, plus D1 Edit
+#   CLOUDFLARE_ACCOUNT_ID  your Cloudflare account id
+# Worker secrets (DASHBOARD_KEY, CALENDARS, …) stay in Cloudflare and are not touched here.
+name: Deploy dashboard
+
+on:
+  push:
+    branches: [main]
+    paths: ['dashboard/**', '.github/workflows/deploy.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - name: Write private config
+        env:
+          SETTINGS_JSON: ${{ secrets.SETTINGS_JSON }}
+          WRANGLER_LOCAL_JSONC: ${{ secrets.WRANGLER_LOCAL_JSONC }}
+        run: |
+          test -n "$SETTINGS_JSON" || { echo "SETTINGS_JSON secret is missing"; exit 1; }
+          test -n "$WRANGLER_LOCAL_JSONC" || { echo "WRANGLER_LOCAL_JSONC secret is missing"; exit 1; }
+          printf '%s' "$SETTINGS_JSON" > settings.json
+          printf '%s' "$WRANGLER_LOCAL_JSONC" > wrangler.local.jsonc
+          node -e "JSON.parse(require('fs').readFileSync('settings.json', 'utf8'))"
+      - run: npm ci
+      - name: Apply database migrations
+        run: npm run db:migrate
+      - name: Deploy
+        run: npm run deploy
