@@ -42,8 +42,8 @@ const TOOLS = [
     title: { type: 'string' },
     start: { type: 'string', description: 'local time YYYY-MM-DDTHH:MM' },
     end: { type: 'string', description: 'local time YYYY-MM-DDTHH:MM, after start' },
-    people: { type: 'array', items: { type: 'string' }, description: 'person ids' },
-  }, ['title', 'start', 'end', 'people']),
+    people: { type: 'array', items: { type: 'string' }, description: 'whose calendar: family person ids only; omit for the person asking' },
+  }, ['title', 'start', 'end']),
   fn('calendar_delete_event', 'Ask to delete an event added on the dashboard (needs a person to approve).', {
     event_id: { type: 'string' },
   }, ['event_id']),
@@ -192,10 +192,11 @@ function systemPrompt(h, from) {
   // Models miscount weekdays ("Saturday" became a Wednesday), so spell out the next two weeks.
   const dates = [];
   for (let i = 0; i < 14; i++) dates.push(wd.format(new Date(now + i * 864e5)) + ' ' + msToLocal(tz, now + i * 864e5).slice(0, 10));
-  return 'You are the assistant on a family wall dashboard. Be brief: one or two short sentences, no markdown. ' +
+  return 'You are the assistant on ' + (h.CFG.family ? 'the ' + h.CFG.family + ' family’s' : 'a family') + ' wall dashboard. Be brief: one or two short sentences, no markdown. ' +
     'Use the tools to read or change the calendar, shopping list and notes; never invent events or items. ' +
     'Never say something was added, changed or deleted unless a tool call in this conversation did it; if a tool returns an error, say it failed. ' +
     'Deleting an event only stages it for approval: say it is waiting for approval. ' +
+    'Other people’s names (friends, doctors, teachers) belong in the event title, never in people; add the event without asking who they are. ' +
     'Now: ' + day + ' ' + msToLocal(tz, now).replace('T', ' ') + ' (' + tz + '). ' +
     'Dates: today ' + dates.join(', ') + '. A weekday name means the next one in this list. ' +
     'People (id: name): ' + h.CFG.people.map((p) => p.id + ': ' + p.name).join(', ') + '. The person asking is ' + from + '.';
@@ -215,6 +216,8 @@ export async function transcribe(env, audio) {
 }
 
 // ------------------------------------------------------------------ the loop
+const CLAIMS = /\b(added|adding|scheduled|booked|deleted|removed|posted|ticked|checked off|marked|waiting for (your )?approval)\b/i;
+const NEGATED = /\b(no|not|nothing|unable|couldn[’']?t|can[’']?t|didn[’']?t|wasn[’']?t)\b/i;
 export async function runAgent(env, h, prompt, from, only) {
   const A = h.CFG.agent, t0 = Date.now();
   const runId = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
@@ -232,6 +235,8 @@ export async function runAgent(env, h, prompt, from, only) {
         if (!calls.length || round === A.maxToolRounds) { reply = (r.message.content || '').trim(); break; }
         messages.push({ role: 'assistant', content: r.message.content || '', tool_calls: calls });
         for (const c of calls) {
+          // gpt-oss sometimes leaks its channel markup into the name ("x<|channel|>commentary").
+          c.function.name = String(c.function.name || '').split('<|')[0].trim();
           let args = c.function.arguments;
           try { if (typeof args === 'string') args = JSON.parse(args || '{}'); } catch (e) { args = {}; }
           let result;
@@ -251,6 +256,11 @@ export async function runAgent(env, h, prompt, from, only) {
   }
   const ms = Date.now() - t0;
   if (!reply && ctx.actions.length) reply = ctx.actions.join('. ') + '.';
+  // The words must not claim a change that no tool made (seen: "waiting for approval" after the
+  // delete call failed).
+  if (reply && !ctx.actions.length && !ctx.approvals.length && CLAIMS.test(reply) && !NEGATED.test(reply)) {
+    reply = 'Sorry, that didn’t work, so nothing was changed. Please try again.';
+  }
   await env.DB.prepare('INSERT INTO agent_runs (id, at, from_id, prompt, provider, model, ms, tools, reply, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .bind(runId, t0, from, prompt.slice(0, 500), used, model, ms, JSON.stringify(ctx.tools), reply, errors.join(' | ') || null).run();
   return { id: runId, reply: reply || 'Sorry, the assistant is not available right now.', ok: !!used, provider: used, model, ms,

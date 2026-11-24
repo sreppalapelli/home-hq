@@ -1,6 +1,8 @@
 {
   "_readme": "Copy to settings.json (gitignored) and edit, then npm run deploy. The Worker bundles it at deploy time; only names, colours and lists reach the browser. Keys, tokens and calendar links go in secrets.json instead. Delete any section you don't use.",
 
+  "_family": "Optional: the family name, used by the assistant (\"the Smith family\").",
+  "family": "Smith",
   "timezone": "Europe/London",
   "location": { "lat": 51.5072, "lon": -0.1276, "units": "celsius" },
   "warnings": { "region": "se", "areas": ["Hampshire", "West Sussex"] },

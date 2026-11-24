@@ -62,6 +62,7 @@ const CFG = (function () {
   };
   return {
     tz, people, bins, warnings, display, agent,
+    family: typeof RAW.family === 'string' ? RAW.family.trim().slice(0, 60) : '',
     // Notify services (e.g. "notify.mobile_app_pixel") told when a frame goes quiet or comes back.
     frameNotify: home && Array.isArray(frames.notify) ? frames.notify.filter((s) => /^notify\.\w+$/.test(s)) : [],
     frameQuietMinutes: Math.max(20, frames.quietMinutes || 20),
