@@ -91,7 +91,8 @@ async function runTool(env, h, name, args, ctx) {
   if (name === 'calendar_delete_event') {
     const ev = await env.DB.prepare('SELECT id, title, start FROM events WHERE id = ?').bind(String(args.event_id || '')).first();
     if (!ev) return { error: 'Only events added on the dashboard can be deleted, and no such event exists.' };
-    const summary = 'Delete "' + ev.title + '" (' + msToLocal(tz, ev.start).replace('T', ' ') + ')';
+    const when = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(ev.start));
+    const summary = 'Delete "' + ev.title + '" · ' + when;
     ctx.approvals.push(await stageApproval(env, ctx.runId, 'calendar_delete', { id: ev.id }, summary));
     return { staged: true, note: 'Waiting for a person to approve on the dashboard.' };
   }
@@ -230,8 +231,9 @@ export async function runAgent(env, h, prompt, from, only) {
       break;
     } catch (err) {
       errors.push(provider + ': ' + String(err.message || err));
-      // A provider that failed after a tool already ran must not run it again on the next one.
-      if (ctx.tools.length) break;
+      // A provider that failed after a tool already ran must not run it again on the next one;
+      // the answer is then built from the actions that did run.
+      if (ctx.tools.length) { used = provider; break; }
     }
   }
   const ms = Date.now() - t0;

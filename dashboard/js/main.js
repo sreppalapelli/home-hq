@@ -15,5 +15,6 @@ import './views/control.js';
 import './views/energy.js';
 import './views/media.js';
 import './views/notes.js';
+import './views/agents.js';
 import './views/ambient.js';
 import './diag.js';
