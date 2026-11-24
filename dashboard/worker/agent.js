@@ -199,7 +199,7 @@ function systemPrompt(h, from) {
     'Other people’s names (friends, doctors, teachers) belong in the event title, never in people; add the event without asking who they are. ' +
     'Now: ' + day + ' ' + msToLocal(tz, now).replace('T', ' ') + ' (' + tz + '). ' +
     'Dates: today ' + dates.join(', ') + '. A weekday name means the next one in this list. ' +
-    'People (id: name): ' + h.CFG.people.map((p) => p.id + ': ' + p.name).join(', ') + '. The person asking is ' + from + '.';
+    'People (id: name, role): ' + h.CFG.people.map((p) => p.id + ': ' + p.name + (p.role ? ', ' + p.role : '')).join('; ') + '. The person asking is ' + from + '.';
 }
 
 // ------------------------------------------------------------------ voice

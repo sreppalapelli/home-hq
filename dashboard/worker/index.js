@@ -27,7 +27,9 @@ const CFG = (function () {
     const [r, g, b] = hexRgb(p.color || '#888888');
     const light = (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.62;
     // notify: a Home Assistant notify service (notify.mobile_app_…) for notes addressed to them.
+    // role: optional ("dad", "daughter"), so the assistant understands "my daughter's calendar".
     return { id: p.id, name: p.name, color: p.color, rgb: r + ' ' + g + ' ' + b, ink: light ? '#111111' : '#FFFFFF', ha: p.ha,
+      role: typeof p.role === 'string' ? p.role.slice(0, 30) : '',
       notify: /^notify\.\w+$/.test(p.notify || '') ? p.notify : null };
   });
   const shop = RAW.shopping || {};
