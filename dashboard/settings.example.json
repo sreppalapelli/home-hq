@@ -87,8 +87,8 @@
 
   "frames": { "notify": ["notify.mobile_app_your_phone"], "quietMinutes": 20 },
 
-  "_watch": "The Watch tab: streaming premieres for the next 7 days. Services: netflix, prime, disney, hulu, max, apple, paramount, hotstar (India catalog).",
-  "watch": { "region": "US", "hotstarRegion": "IN", "services": ["netflix", "prime", "disney", "hulu", "max", "apple", "paramount", "hotstar"] },
+  "_watch": "The Watch tab: streaming premieres for the next 7 days. Services: netflix, prime, disney, hulu, max, apple, paramount, hotstar (India catalog). languages: extra original languages (e.g. "te" = Telugu), dated from languageRegion's releases.",
+  "watch": { "region": "US", "hotstarRegion": "IN", "languages": ["te"], "languageRegion": "IN", "services": ["netflix", "prime", "disney", "hulu", "max", "apple", "paramount", "hotstar"] },
 
   "_agent": "The assistant. Free providers only, tried in order; OpenRouter models must end in :free (or be openrouter/free).",
   "agent": { "order": ["workers-ai", "openrouter"], "workersAiModel": "@cf/openai/gpt-oss-20b", "openrouterModels": ["openrouter/free"], "maxToolRounds": 4 }

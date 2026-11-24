@@ -1,28 +1,30 @@
 // Watch: streaming premieres for the next 7 days (new movies, new series, new seasons) on the
 // family's services, from /api/watch (worker/watch.js). Day tabs with counts, a poster grid, filter
-// chips per service plus "Family-friendly", and a detail sheet with IMDb rating and cast. Filters
+// chips per service, per extra language (e.g. Telugu) and "Family-friendly", and a detail sheet with IMDb rating and cast. Filters
 // are remembered on this frame.
 (function () {
   'use strict';
-  var V = { el: null, data: null, loaded: 0, day: null, service: 'all', family: false };
+  var V = { el: null, data: null, loaded: 0, day: null, service: 'all', family: false, lang: null };
   var REFRESH_MS = 15 * 60e3;
 
   function load(k, d) { try { var v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
   function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
   V.service = load('hq-watch-service', 'all');
   V.family = load('hq-watch-family', false);
+  V.lang = load('hq-watch-lang', null);
 
   function svc(id) { return (V.data.services || []).filter(function (s) { return s.id === id; })[0] || { name: id, color: '#555' }; }
   function ymdDate(ymd) { var a = ymd.split('-'); return new Date(+a[0], +a[1] - 1, +a[2]); }
   function dayLabel(ymd, i) { return i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : App.fmt.dayShort(ymdDate(ymd)) + ' ' + ymdDate(ymd).getDate(); }
   function shown() {
     return V.data.items.filter(function (x) {
-      return (V.service === 'all' || x.service === V.service) && (!V.family || x.family);
+      return (V.service === 'all' || x.service === V.service) && (!V.family || x.family) && (!V.lang || x.lang === V.lang);
     });
   }
   function rating(x) {
     return x.imdbRating ? '<span class="wt-star">★ ' + x.imdbRating.toFixed(1) + '</span>' : x.tmdbScore ? '<span class="wt-star is-tmdb">★ ' + x.tmdbScore.toFixed(1) + '</span>' : '';
   }
+  function langName(code) { return ((V.data.languages || []).filter(function (l) { return l.code === code; })[0] || { name: code }).name; }
   function badge(id) { var s = svc(id); return '<span class="wt-svc" style="--svc:' + s.color + '">' + App.esc(s.name) + '</span>'; }
 
   // ------------------------------------------------------------ painting
@@ -30,7 +32,7 @@
     return '<button class="wt-card" data-title="' + x.type + '/' + x.tmdb + '">' +
       '<span class="wt-poster">' + (x.poster ? '<img loading="lazy" alt="" src="/api/watch/img/w185' + x.poster + '">' : '<span class="wt-noposter serif">' + App.esc(x.title) + '</span>') + '</span>' +
       '<b class="wt-name">' + App.esc(x.title) + '</b>' +
-      '<span class="wt-meta">' + badge(x.service) + '<span class="wt-label">' + App.esc(x.label) + '</span></span>' +
+      '<span class="wt-meta">' + badge(x.service) + '<span class="wt-label">' + App.esc(x.label) + '</span>' + (x.lang ? '<span class="wt-lang">' + App.esc(langName(x.lang)) + '</span>' : '') + '</span>' +
       '<span class="wt-meta">' + rating(x) + (x.cert ? '<span class="wt-cert' + (x.family ? '' : ' is-mature') + '">' + App.esc(x.cert) + '</span>' : '') +
       (x.time ? '<span class="wt-time">' + App.esc(x.time) + '</span>' : '') + '</span></button>';
   }
@@ -42,6 +44,7 @@
         '<p class="wt-empty serif">Watch isn’t set up yet: it needs free TMDB and Trakt keys.</p></div>';
       return;
     }
+    if (V.lang && !(d.languages || []).some(function (l) { return l.code === V.lang; })) V.lang = null;
     var items = shown();
     if (V.day && V.day !== 'week' && d.days.indexOf(V.day) < 0) V.day = null;
     if (!V.day) V.day = d.days[0];
@@ -62,6 +65,7 @@
       '<div class="wt-filters">' +
       '<button class="chip' + (V.service === 'all' ? ' is-on' : '') + '" data-svc="all">All</button>' +
       d.services.map(function (s) { return '<button class="chip wt-chip' + (V.service === s.id ? ' is-on' : '') + '" data-svc="' + s.id + '" style="--svc:' + s.color + '"><i></i>' + App.esc(s.name.replace(' (India)', '')) + '</button>'; }).join('') +
+      (d.languages || []).map(function (l) { return '<button class="chip chip--ghost' + (V.lang === l.code ? ' is-on' : '') + '" data-lang="' + App.esc(l.code) + '">' + App.esc(l.name) + '</button>'; }).join('') +
       '<button class="chip chip--ghost' + (V.family ? ' is-on' : '') + '" data-family>Family-friendly</button></div></header>' +
       '<div class="seg wt-days">' + d.days.map(function (ymd, i) {
         return '<button class="' + (V.day === ymd ? 'is-on' : '') + '" data-day="' + ymd + '">' + dayLabel(ymd, i) + ' <span class="num">' + count(ymd) + '</span></button>';
@@ -126,6 +130,7 @@
     var t = e.target.closest('[data-title]'), s = e.target.closest('[data-svc]'), day = e.target.closest('[data-day]');
     if (t) { var p = t.dataset.title.split('/'); openTitle(p[0], p[1]); }
     else if (s) { V.service = s.dataset.svc; save('hq-watch-service', V.service); paint(); }
+    else if (e.target.closest('[data-lang]')) { var l = e.target.closest('[data-lang]').dataset.lang; V.lang = V.lang === l ? null : l; save('hq-watch-lang', V.lang); paint(); }
     else if (e.target.closest('[data-family]')) { V.family = !V.family; save('hq-watch-family', V.family); paint(); }
     else if (day) { V.day = day.dataset.day; paint(); var b = V.el.querySelector('.wt-body'); if (b) b.scrollTop = 0; }
   }

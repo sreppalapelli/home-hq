@@ -35,6 +35,9 @@ function serviceOf(name, allowed) {
   const s = SERVICES.find((x) => x.re.test(String(name || '').trim()));
   return s && allowed.indexOf(s.id) >= 0 ? s.id : null;
 }
+export function langName(code) {
+  try { return new Intl.DisplayNames(['en'], { type: 'language' }).of(code) || code; } catch (e) { return code; }
+}
 export function isFamily(cert) { return !!cert && FAMILY_CERTS.indexOf(cert) >= 0; }
 
 // ------------------------------------------------------------------ outside calls
@@ -77,7 +80,8 @@ function writeWeek(env, h, week) { return h.putCache(env, WEEK_KEY, week, 3 * 86
 // One source per run: Trakt new shows, Trakt season premieres, TMDB shows airing on each service's
 // network (Trakt's calendars miss many streaming premieres), Trakt streaming movies, and TMDB's US
 // digital releases (streaming originals such as Netflix films and specials, named in the note).
-const STAGES = ['new', 'premieres', 'tmdbtv', 'movies', 'tmdbmovies'];
+// Then titles in the extra languages (e.g. Telugu), whose streaming dates are set in India.
+const STAGES = ['new', 'premieres', 'tmdbtv', 'movies', 'tmdbmovies', 'languages'];
 async function fetchStage(env, h, stage, week, b) {
   const W = h.CFG.watch, start = week.from;
   if (stage === 'movies') {
@@ -95,6 +99,23 @@ async function fetchStage(env, h, stage, week, b) {
       (r.results || []).forEach((m) => add(week, { type: 'movie', tmdb: m.id, imdb: null, title: m.title, year: String(m.release_date || '').slice(0, 4),
         date: null, needsDate: true, time: null, service: null, label: 'Movie', cert: null, overview: m.overview || '' }));
       if (page >= (r.total_pages || 1)) break;
+    }
+    return;
+  }
+  if (stage === 'languages') {
+    for (const lang of W.languages) {
+      for (let page = 1; page <= 2 && b.left > 2; page++) {
+        const r = await tmdb(env, b, '/discover/movie?with_original_language=' + lang + '&region=' + W.languageRegion + '&with_release_type=4&release_date.gte=' + week.from + '&release_date.lte=' + week.to + '&sort_by=popularity.desc&page=' + page);
+        (r.results || []).forEach((m) => add(week, { type: 'movie', tmdb: m.id, imdb: null, title: m.title, year: String(m.release_date || '').slice(0, 4),
+          date: null, needsDate: true, time: null, service: null, label: 'Movie', cert: null, overview: m.overview || '' }));
+        if (page >= (r.total_pages || 1)) break;
+      }
+      for (let page = 1; page <= 2 && b.left > 2; page++) {
+        const r = await tmdb(env, b, '/discover/tv?with_original_language=' + lang + '&air_date.gte=' + week.from + '&air_date.lte=' + week.to + '&sort_by=popularity.desc&page=' + page);
+        (r.results || []).forEach((s) => add(week, { type: 'tv', tmdb: s.id, imdb: null, title: s.name, year: String(s.first_air_date || '').slice(0, 4),
+          date: null, needsDate: true, time: null, service: null, label: null, cert: null, overview: s.overview || '' }));
+        if (page >= (r.total_pages || 1)) break;
+      }
     }
     return;
   }
@@ -147,6 +168,9 @@ async function fetchDetails(env, h, type, id, b) {
   const providers = (region) => ((((t['watch/providers'] || {}).results || {})[region] || {}).flatrate || []).map((p) => p.provider_name);
   const usService = providers(W.region).map((n) => serviceOf(n, W.services)).filter((s) => s && s !== 'hotstar')[0] || null;
   const inService = W.services.indexOf('hotstar') >= 0 && providers(W.hotstarRegion).some((n) => /hotstar/i.test(n)) ? 'hotstar' : null;
+  // Extra-language titles (e.g. Telugu) are often listed only in India's data.
+  const otherLang = W.languages.indexOf(t.original_language) >= 0;
+  const langService = otherLang ? providers(W.languageRegion).map((n) => serviceOf(n, W.services)).filter(Boolean)[0] || null : null;
   const crew = (t.credits && t.credits.crew) || [];
   const d = {
     type, tmdb: id, imdb, title: t.title || t.name, year: String(t.release_date || t.first_air_date || '').slice(0, 4),
@@ -158,19 +182,24 @@ async function fetchDetails(env, h, type, id, b) {
     cast: ((t.credits && t.credits.cast) || []).slice(0, 6).map((c) => ({ name: c.name, as: c.character || '' })),
     by: type === 'movie' ? crew.filter((c) => c.job === 'Director').map((c) => c.name).slice(0, 2)
       : (t.created_by || []).map((c) => c.name).slice(0, 2),
-    service: usService || inService, imdbRating: null, rt: null,
+    service: usService || inService || langService, lang: t.original_language || null, imdbRating: null, rt: null,
     eps: [t.next_episode_to_air, t.last_episode_to_air].filter(Boolean).map((e) => ({ season: e.season_number, number: e.episode_number, date: e.air_date })),
   };
   // Streaming originals often have no provider listed before release day, but their US digital
   // release (type 4) carries the service in its note ("Netflix").
-  if (type === 'movie' && !d.service) {
-    const us = ((t.release_dates || {}).results || []).find((x) => x.iso_3166_1 === W.region);
-    const hit = us && us.release_dates.find((r) => r.type === 4 && serviceOf(r.note, W.services));
+  const regions = otherLang ? [W.region, W.languageRegion] : [W.region];
+  const digital = (region) => {
+    const r = ((t.release_dates || {}).results || []).find((x) => x.iso_3166_1 === region);
+    return r ? r.release_dates.filter((x) => x.type === 4) : [];
+  };
+  for (const region of regions) {
+    if (type !== 'movie' || d.service) break;
+    const hit = digital(region).find((r) => serviceOf(r.note, W.services));
     if (hit) { d.service = serviceOf(hit.note, W.services); d.digital = String(hit.release_date).slice(0, 10); }
   }
-  if (type === 'movie' && !d.digital) {
-    const us = ((t.release_dates || {}).results || []).find((x) => x.iso_3166_1 === W.region);
-    const dig = us && us.release_dates.find((r) => r.type === 4);
+  for (const region of regions) {
+    if (type !== 'movie' || d.digital) break;
+    const dig = digital(region)[0];
     if (dig) d.digital = String(dig.release_date).slice(0, 10);
   }
   if (imdb && env.OMDB_API_KEY && b.left > 0) {
@@ -186,7 +215,8 @@ async function fetchDetails(env, h, type, id, b) {
 }
 async function cachedDetails(env, type, id) {
   const row = await env.DB.prepare('SELECT value, expires FROM cache WHERE key = ?').bind('watch:t:' + type + ':' + id).first();
-  return row && row.expires > Date.now() ? JSON.parse(row.value) : null;
+  const d = row && row.expires > Date.now() ? JSON.parse(row.value) : null;
+  return d && 'lang' in d ? d : null; // details cached before languages were tracked are fetched again
 }
 function merge(it, d, week) {
   const inWeek = (x) => !!x && x >= week.from && x <= week.to;
@@ -208,7 +238,8 @@ function merge(it, d, week) {
   }
   it.poster = d.poster; it.imdbRating = d.imdbRating; it.tmdbScore = d.tmdbScore;
   if (!it.imdb) it.imdb = d.imdb;
-  if (it.type === 'movie') it.service = d.service;
+  if (it.type === 'movie' || !it.service) it.service = d.service;
+  it.lang = d.lang;
   if (!it.cert) it.cert = it.service === 'hotstar' ? (d.certIN || d.certUS) : (d.certUS || d.certIN);
   it.state = it.service ? 'ready' : 'dropped';
 }
@@ -244,7 +275,8 @@ export async function stepWatch(env, h) {
 // ------------------------------------------------------------------ API
 export async function watchWeek(env, h) {
   const W = h.CFG.watch, tz = h.CFG.tz;
-  const base = { configured: watchConfigured(env), services: SERVICES.filter((s) => W.services.indexOf(s.id) >= 0).map((s) => ({ id: s.id, name: s.name, color: s.color })) };
+  const base = { configured: watchConfigured(env), services: SERVICES.filter((s) => W.services.indexOf(s.id) >= 0).map((s) => ({ id: s.id, name: s.name, color: s.color })),
+    languages: W.languages.map((code) => ({ code, name: langName(code) })) };
   if (!base.configured) return Object.assign(base, { items: [], days: [], building: false });
   const week = await readWeek(env);
   const days = [];
@@ -252,7 +284,7 @@ export async function watchWeek(env, h) {
   if (!week) return Object.assign(base, { items: [], days, building: true });
   const items = week.items.filter((x) => x.state === 'ready' && days.indexOf(x.date) >= 0)
     .map((x) => ({ key: x.key, type: x.type, tmdb: x.tmdb, title: x.title, date: x.date, time: x.time, service: x.service, label: x.label,
-      cert: x.cert, family: isFamily(x.cert), poster: x.poster, imdbRating: x.imdbRating || null, tmdbScore: x.tmdbScore || null }))
+      cert: x.cert, family: isFamily(x.cert), lang: W.languages.indexOf(x.lang) >= 0 ? x.lang : null, poster: x.poster, imdbRating: x.imdbRating || null, tmdbScore: x.tmdbScore || null }))
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (b.imdbRating || b.tmdbScore || 0) - (a.imdbRating || a.tmdbScore || 0)));
   return Object.assign(base, { items, days, building: week.stage < STAGES.length || week.items.some((x) => x.state === 'pending'), updated: week.started });
 }
@@ -267,11 +299,11 @@ export async function watchTitle(env, h, type, id) {
 }
 
 // For the assistant: compact lines.
-export async function watchSummary(env, h, day, service) {
+export async function watchSummary(env, h, day, service, lang) {
   const w = await watchWeek(env, h);
   if (!w.configured) return { error: 'The Watch list is not set up yet.' };
-  return w.items.filter((x) => (!day || x.date === day) && (!service || x.service === service))
-    .slice(0, 25).map((x) => x.date + ' · ' + SERVICES.find((s) => s.id === x.service).name + ' · ' + x.title + ' (' + x.label + (x.cert ? ', ' + x.cert : '') + (x.imdbRating ? ', IMDb ' + x.imdbRating : '') + ')');
+  return w.items.filter((x) => (!day || x.date === day) && (!service || x.service === service) && (!lang || x.lang === lang))
+    .slice(0, 25).map((x) => x.date + ' · ' + SERVICES.find((s) => s.id === x.service).name + ' · ' + x.title + ' (' + x.label + (x.lang ? ', ' + langName(x.lang) : '') + (x.cert ? ', ' + x.cert : '') + (x.imdbRating ? ', IMDb ' + x.imdbRating : '') + ')');
 }
 
 // Posters, through the Worker: small sizes only, cached at the edge for a month.

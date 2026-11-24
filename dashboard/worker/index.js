@@ -69,6 +69,9 @@ const CFG = (function () {
     region: /^[A-Z]{2}$/.test(wt.region || '') ? wt.region : 'US',
     hotstarRegion: /^[A-Z]{2}$/.test(wt.hotstarRegion || '') ? wt.hotstarRegion : 'IN',
     services: Array.isArray(wt.services) ? wt.services.filter((s) => WATCH_SERVICES.some((x) => x.id === s)) : WATCH_SERVICES.map((x) => x.id),
+    // Extra original languages (ISO 639-1, e.g. "te" for Telugu), looked up in languageRegion's releases.
+    languages: Array.isArray(wt.languages) ? wt.languages.filter((l) => /^[a-z]{2}$/.test(l)) : [],
+    languageRegion: /^[A-Z]{2}$/.test(wt.languageRegion || '') ? wt.languageRegion : 'IN',
   };
   return {
     tz, people, bins, warnings, display, agent, watch,

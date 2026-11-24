@@ -55,6 +55,7 @@ const TOOLS = [
   fn('watch_list', 'New movies, new series and new seasons premiering on streaming services in the next 7 days.', {
     day: { type: 'string', description: 'YYYY-MM-DD; omit for the whole week' },
     service: { type: 'string', enum: ['netflix', 'prime', 'disney', 'hulu', 'max', 'apple', 'paramount', 'hotstar'] },
+    language: { type: 'string', description: 'ISO 639-1 code of the original language, e.g. "te" for Telugu; omit for all' },
   }),
   fn('notes_post', 'Post a sticky note on the frames.', {
     text: { type: 'string', description: 'max 140 characters' },
@@ -127,7 +128,7 @@ async function runTool(env, h, name, args, ctx) {
     if (done.length) ctx.actions.push({ add: 'Added', check: 'Ticked off', remove: 'Removed' }[args.action] + ': ' + done.join(', '));
     return { done, notFound: items.filter((i) => done.indexOf(i) < 0 && !done.some((d) => i.endsWith(d))) };
   }
-  if (name === 'watch_list') return h.watchSummary(env, h, /^\d{4}-\d{2}-\d{2}$/.test(args.day || '') ? args.day : null, args.service || null);
+  if (name === 'watch_list') return h.watchSummary(env, h, /^\d{4}-\d{2}-\d{2}$/.test(args.day || '') ? args.day : null, args.service || null, /^[a-z]{2}$/.test(args.language || '') ? args.language : null);
   if (name === 'notes_post') {
     const res = await h.putNote(env, { id: h.uid(), text: args.text, from: ctx.from, to: personId(h, args.to) || 'all' });
     const out = await res.json();
