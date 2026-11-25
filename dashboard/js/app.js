@@ -362,12 +362,12 @@
   // ------------------------------------------------------------ idle
   // Timeouts (seconds since the last touch), per frame (display controls): back to Today, rest
   // (photo screen, dim clock or screen off), and the same during the night hours ("peek"), so a
-  // look at the time in bed doesn't keep the screen up for two minutes.
+  // look at the time in bed doesn't keep the screen up for two minutes. 0 = never.
   App.idle = (function () {
     var d = { home: 60, rest: 120, peek: 20 };
     try {
       var v = JSON.parse(localStorage.getItem('hq-idle')) || {};
-      Object.keys(d).forEach(function (k) { if (v[k] >= 5 && v[k] <= 3600) d[k] = Math.round(v[k]); });
+      Object.keys(d).forEach(function (k) { if (v[k] === 0 || (v[k] >= 5 && v[k] <= 3600)) d[k] = Math.round(v[k]); });
     } catch (e) {}
     return d;
   })();
@@ -375,7 +375,7 @@
     var n = Object.assign({}, App.idle);
     Object.keys(patch).forEach(function (k) {
       var v = Math.round(+patch[k]);
-      if (k in n && v >= 5 && v <= 3600) n[k] = v;
+      if (k in n && (v === 0 || (v >= 5 && v <= 3600))) n[k] = v;
     });
     Object.assign(App.idle, n);
     try { localStorage.setItem('hq-idle', JSON.stringify(App.idle)); } catch (e) {}
@@ -385,8 +385,9 @@
     idleSec++;
     var blocked = $('#takeover').classList.contains('is-open');
     if (App.mode !== 'day' || blocked) return;
-    if (idleSec === App.idle.home && App.current !== 'home') { App.closeSheet(); App.go('home'); }
-    if (idleSec >= (App.isNight() ? App.idle.peek : App.idle.rest)) App.rest();
+    if (App.idle.home && idleSec === App.idle.home && App.current !== 'home') { App.closeSheet(); App.go('home'); }
+    var rest = App.isNight() ? App.idle.peek : App.idle.rest;
+    if (rest && idleSec >= rest) App.rest();
   }
   App.resetIdle = function () { idleSec = 0; };
   App.idleFor = function () { return idleSec; };

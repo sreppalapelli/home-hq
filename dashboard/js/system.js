@@ -214,11 +214,11 @@
       '<button data-nightoff class="' + (App.night.offOn ? 'is-on' : '') + '" aria-label="Screen off at night">' + (App.night.offOn ? 'On' : 'Off') + '</button></div></div>' +
       '<div class="demo-sec"><div class="label label--light">Timeouts (seconds)</div>' +
       '<div class="demo-night">' +
-      '<label>Today <input type="number" inputmode="numeric" min="5" max="3600" step="5" data-idle="home" value="' + App.idle.home + '" aria-label="Seconds before returning to Today"></label>' +
-      '<label>Rest <input type="number" inputmode="numeric" min="5" max="3600" step="5" data-idle="rest" value="' + App.idle.rest + '" aria-label="Seconds before the photo screen"></label></div>' +
+      '<label>Today <input type="number" inputmode="numeric" min="0" max="3600" step="5" data-idle="home" value="' + App.idle.home + '" aria-label="Seconds before returning to Today"></label>' +
+      '<label>Rest <input type="number" inputmode="numeric" min="0" max="3600" step="5" data-idle="rest" value="' + App.idle.rest + '" aria-label="Seconds before the photo screen"></label></div>' +
       '<div class="demo-night">' +
-      '<label>Peek <input type="number" inputmode="numeric" min="5" max="3600" step="5" data-idle="peek" value="' + App.idle.peek + '" aria-label="Seconds before the night clock"></label>' +
-      '<span class="demo-spacer"></span></div></div>' +
+      '<label>Peek <input type="number" inputmode="numeric" min="0" max="3600" step="5" data-idle="peek" value="' + App.idle.peek + '" aria-label="Seconds before the night clock"></label>' +
+      '<span class="demo-spacer"></span></div><p class="demo-note">0 = never.</p></div>' +
       '<div class="demo-sec" id="demoAdb"></div>' +
       '<div class="demo-sec"><div class="label label--light">Frames</div><div class="demo-frames" id="demoFrames"><p class="demo-note">Checking…</p></div></div>' +
       '<div class="demo-sec"><div class="label label--light">Status</div><p class="demo-note">' + status() + '</p>' +

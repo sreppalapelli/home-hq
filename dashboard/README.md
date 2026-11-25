@@ -200,7 +200,8 @@ Press and hold the clock in the left rail (or press **D**) to open them. They sh
   after two minutes untouched. A window may cross midnight. Clearing the frame's storage resets the times.
 - **Timeouts:** three times in seconds, kept on that frame: **Today** (back to Today after this long
   untouched, 60), **Rest** (then the photo screen, dim clock or screen off, 120) and **Peek** (the
-  Rest time instead, during the night hours, 20). Anything outside 5–3600 snaps back.
+  Rest time instead, during the night hours, 20). 0 means never: with Rest and Peek at 0 the frame
+  stays on the dashboard. Anything else outside 5–3600 snaps back.
 - **Modes:** a dropdown and **Show**. **Ambient** rests the frame now instead of waiting for the
   timeout; the clock still chooses the screen (photos, dim clock or off) and keeps switching at
   Dim, Bright, Sleep and Wake as normal. **Screen off** turns the screen as dark as it goes and keeps
